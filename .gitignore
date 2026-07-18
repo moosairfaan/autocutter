@@ -1,0 +1,21 @@
+# Secrets / local config
+.env
+.env.*
+!.env.example
+.autocutter/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Pipeline outputs / media
+output/
+*.wav
+
+# OS
+.DS_Store

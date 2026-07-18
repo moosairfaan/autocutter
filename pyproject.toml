@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "autocutter"
+version = "0.1.0"
+description = "AI-assisted video cutting that produces Final Cut Pro X FCPXML edits"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "autocutter" }]
+dependencies = [
+    "faster-whisper",
+    "anthropic",
+    "python-dotenv",
+    "ffmpeg-python",
+    "rich",
+]
+
+[project.scripts]
+autocutter = "autocutter.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["autocutter*"]
