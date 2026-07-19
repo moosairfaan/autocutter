@@ -16,6 +16,7 @@ from typing import Any, Callable
 from dotenv import dotenv_values
 
 from autocutter import AUTOCUTTER_ENV, AUTOCUTTER_HOME
+from autocutter.names import video_slug
 
 SKIP_TO_CHOICES = ("transcribe", "analyze", "select")
 WHISPER_MODELS = ("tiny", "base", "small", "medium", "large")
@@ -266,14 +267,6 @@ def _parse_duration_minutes(raw: str) -> float | None:
     if total <= 0:
         raise ValueError("Target length must be greater than zero")
     return total
-
-
-def video_slug(video_path: Path) -> str:
-    """Derive a filesystem-safe slug from the video filename stem."""
-    stem = Path(video_path).stem.strip().lower()
-    slug = re.sub(r"[^\w]+", "-", stem, flags=re.UNICODE)
-    slug = re.sub(r"-+", "-", slug).strip("-_")
-    return slug or "video"
 
 
 def resolve_run_output_dir(base_dir: Path, video_path: Path) -> Path:

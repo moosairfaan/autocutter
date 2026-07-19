@@ -18,9 +18,17 @@ dependencies = [
     "rich",
 ]
 
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "python-multipart>=0.0.12",
+    "sse-starlette>=2.1.0",
+]
+
 [project.scripts]
 autocutter = "autocutter.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["autocutter*"]
+include = ["autocutter*", "backend*"]
