@@ -23,8 +23,7 @@ If you want to use this, clone it and run it locally (instructions below). A pac
 ## Status
 
 - CLI + FCPXML export: working
-- Web app: working v0 — upload, transcribe, AI scoring, approve/reject cuts in browser, export finished MP4
-- Not yet built: drag-to-reorder and manual trim adjustment on the web app's timeline (currently toggle keep/cut only)
+- Web app: working — upload, transcribe, AI scoring, timeline keep/cut, drag-to-reorder, trim handles, export finished MP4
 
 ## Requirements
 
