@@ -66,6 +66,28 @@ export function keptDurationSeconds(segments: EditSegment[]): number {
   return segments.filter((s) => s.keep).reduce((sum, s) => sum + segmentDuration(s), 0)
 }
 
+/** v0 export payload: keep/cut only, trims = original start/end, chrono order. */
+export function buildSimpleEditDecision(segments: EditSegment[]): EditSegment[] {
+  const chronological = [...segments].sort(
+    (a, b) => (a.start ?? a.trim_in) - (b.start ?? b.trim_in),
+  )
+  const kept = chronological.filter((s) => s.keep)
+  const orderById = new Map(kept.map((s, i) => [s.id, i]))
+
+  return chronological.map((s) => {
+    const start = s.start ?? s.trim_in
+    const end = s.end ?? s.trim_out
+    return {
+      ...s,
+      start,
+      end,
+      trim_in: start,
+      trim_out: end,
+      order: s.keep ? (orderById.get(s.id) ?? 0) : -1,
+    }
+  })
+}
+
 export function reindexKeptOrder(segments: EditSegment[]): EditSegment[] {
   const kept = segments
     .filter((s) => s.keep)

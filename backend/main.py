@@ -73,7 +73,11 @@ class EditDecisionBody(BaseModel):
 
 
 def _sse_from_worker(worker_fn: Any) -> EventSourceResponse:
-    """Run a blocking worker in a thread; stream dict events as SSE."""
+    """Run a blocking worker in a thread; stream dict events as SSE.
+
+    Always ends with an explicit ``event: complete`` (success) or
+    ``event: error`` so clients never hang waiting for a terminal event.
+    """
     q: queue.Queue[dict[str, Any] | None] = queue.Queue()
 
     def target() -> None:
@@ -86,6 +90,7 @@ def _sse_from_worker(worker_fn: Any) -> EventSourceResponse:
                     "step": "error",
                     "progress": 0.0,
                     "message": str(exc),
+                    "status": "error",
                 }
             )
         finally:
@@ -94,16 +99,86 @@ def _sse_from_worker(worker_fn: Any) -> EventSourceResponse:
     threading.Thread(target=target, daemon=True).start()
 
     async def event_generator():  # type: ignore[no-untyped-def]
-        while True:
-            item = await asyncio.to_thread(q.get)
-            if item is None:
-                break
-            yield {
-                "event": item.get("event", "progress"),
-                "data": json.dumps(item),
-            }
+        saw_terminal = False
+        try:
+            while True:
+                item = await asyncio.to_thread(q.get)
+                if item is None:
+                    break
 
-    return EventSourceResponse(event_generator())
+                raw_event = str(item.get("event", "progress"))
+                # Normalize success to SSE event name "complete"
+                if raw_event in {"done", "complete"}:
+                    saw_terminal = True
+                    payload = {
+                        **item,
+                        "event": "complete",
+                        "status": "done",
+                        "progress": item.get("progress", 1.0),
+                    }
+                    yield {
+                        "event": "complete",
+                        "data": json.dumps(payload),
+                    }
+                elif raw_event == "error":
+                    saw_terminal = True
+                    payload = {
+                        **item,
+                        "event": "error",
+                        "status": "error",
+                    }
+                    yield {
+                        "event": "error",
+                        "data": json.dumps(payload),
+                    }
+                else:
+                    yield {
+                        "event": "progress",
+                        "data": json.dumps({**item, "event": "progress"}),
+                    }
+
+            # Guarantee a terminal event even if the worker forgot one.
+            if not saw_terminal:
+                print(
+                    "SSE worker finished without terminal event; emitting complete",
+                    flush=True,
+                )
+                yield {
+                    "event": "complete",
+                    "data": json.dumps(
+                        {
+                            "event": "complete",
+                            "status": "done",
+                            "progress": 1.0,
+                            "message": "Processing complete",
+                        }
+                    ),
+                }
+        except Exception as exc:
+            print(f"SSE generator error: {exc}", flush=True)
+            yield {
+                "event": "error",
+                "data": json.dumps(
+                    {
+                        "event": "error",
+                        "status": "error",
+                        "step": "error",
+                        "progress": 0.0,
+                        "message": str(exc),
+                    }
+                ),
+            }
+        finally:
+            print("SSE stream closed", flush=True)
+
+    return EventSourceResponse(
+        event_generator(),
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.get("/health")
@@ -113,13 +188,45 @@ def health() -> dict[str, str]:
 
 @app.post("/projects")
 async def create_project(video: UploadFile = File(...)) -> dict[str, Any]:
-    """Upload a video; create ~/.autocutter/projects/{id}/ and return project_id."""
+    """Upload a video; create ~/.autocutter/projects/{id}/ and return project_id.
+
+    Form field name must be ``video`` (matches frontend FormData key).
+    """
+    import shutil
+    from datetime import datetime, timezone
+
     original = Path(video.filename or "upload.mp4").name
     ext = Path(original).suffix.lower() or ".mp4"
-    if ext not in VIDEO_EXTENSIONS:
-        # Allow anyway but keep a sane extension for FileResponse media types.
-        if not ext:
-            ext = ".mp4"
+    if ext not in VIDEO_EXTENSIONS and not ext:
+        ext = ".mp4"
+
+    # Diagnose before any disk write: what did Starlette/FastAPI actually receive?
+    declared_size = getattr(video, "size", None)
+    print(
+        "UPLOAD recv "
+        f"filename={video.filename!r} "
+        f"content_type={video.content_type!r} "
+        f"declared_size={declared_size!r}",
+        flush=True,
+    )
+
+    # Read the full body first so we can log exact byte length before writing.
+    # (Videos of a few hundred MB are acceptable to hold briefly in memory.)
+    payload = await video.read()
+    nbytes = len(payload)
+    print(f"UPLOAD read {nbytes} bytes from UploadFile before write", flush=True)
+
+    if nbytes == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty (0 bytes read)")
+    if nbytes < 1024:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Uploaded file is only {nbytes} bytes — expected a real video. "
+                "Check that the frontend FormData field is named 'video' and "
+                "appends the File object (not a string/path)."
+            ),
+        )
 
     base = video_slug(original)
     project_id = base
@@ -133,29 +240,32 @@ async def create_project(video: UploadFile = File(...)) -> dict[str, Any]:
     video_path = dest / video_filename
 
     try:
-        with video_path.open("wb") as out:
-            while True:
-                chunk = await video.read(1024 * 1024)
-                if not chunk:
-                    break
-                out.write(chunk)
-        if video_path.stat().st_size == 0:
-            raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        video_path.write_bytes(payload)
+        written = video_path.stat().st_size
+        print(
+            f"UPLOAD wrote {written} bytes → {video_path} "
+            f"(match={written == nbytes})",
+            flush=True,
+        )
+        if written != nbytes:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Write size mismatch: read {nbytes}, wrote {written}",
+            )
     except HTTPException:
+        shutil.rmtree(dest, ignore_errors=True)
         raise
     except Exception as exc:
-        # Clean up partial project on failure.
-        import shutil
-
         shutil.rmtree(dest, ignore_errors=True)
         raise HTTPException(status_code=500, detail=f"Failed to save upload: {exc}") from exc
-
-    from datetime import datetime, timezone
+    finally:
+        await video.close()
 
     meta = {
         "id": project_id,
         "original_filename": original,
         "video_filename": video_filename,
+        "bytes": nbytes,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "status": "created",
     }
@@ -165,6 +275,7 @@ async def create_project(video: UploadFile = File(...)) -> dict[str, Any]:
     return {
         "project_id": project_id,
         "original_filename": original,
+        "bytes_written": nbytes,
         "status": "created",
     }
 

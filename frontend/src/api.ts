@@ -2,31 +2,128 @@ import type { ProcessOptions, ProgressEvent, SegmentsResponse } from './types'
 
 const API_BASE = '/api'
 
-function parseSseChunk(chunk: string): ProgressEvent | null {
-  let data = ''
-  for (const line of chunk.split('\n')) {
-    if (line.startsWith('data:')) {
-      data += line.slice(5).trimStart()
-    }
-  }
-  if (!data) return null
-  return JSON.parse(data) as ProgressEvent
+type ParsedSse = {
+  sseEvent: string
+  data: ProgressEvent
 }
 
-export async function createProject(file: File): Promise<{ project_id: string }> {
+function parseSseChunk(chunk: string): ParsedSse | null {
+  let sseEvent = 'message'
+  const dataLines: string[] = []
+
+  for (const rawLine of chunk.split('\n')) {
+    const line = rawLine.replace(/\r$/, '')
+    // SSE comments / keepalives (e.g. ": ping") — ignore, never parse as data.
+    if (line.startsWith(':') || line.trim() === '') continue
+    if (line.startsWith('event:')) {
+      sseEvent = line.slice(6).trim()
+    } else if (line.startsWith('data:')) {
+      dataLines.push(line.slice(5).trimStart())
+    }
+    // Ignore unknown fields (id:, retry:, etc.)
+  }
+
+  // No data lines → comment-only keepalive or empty block (not an error).
+  if (!dataLines.length) return null
+  const data = JSON.parse(dataLines.join('\n')) as ProgressEvent
+  return { sseEvent, data }
+}
+
+function isTerminalComplete(parsed: ParsedSse): boolean {
+  const { sseEvent, data } = parsed
+  return (
+    sseEvent === 'complete' ||
+    sseEvent === 'done' ||
+    data.event === 'complete' ||
+    data.event === 'done' ||
+    data.status === 'done'
+  )
+}
+
+function isTerminalError(parsed: ParsedSse): boolean {
+  const { sseEvent, data } = parsed
+  return (
+    sseEvent === 'error' ||
+    data.event === 'error' ||
+    data.status === 'error'
+  )
+}
+
+function handleParsed(
+  parsed: ParsedSse,
+  onProgress: (event: ProgressEvent) => void,
+): 'complete' | 'error' | 'continue' {
+  const evt: ProgressEvent = {
+    ...parsed.data,
+    // Normalize so UI always sees a familiar event name.
+    event: isTerminalComplete(parsed)
+      ? 'complete'
+      : isTerminalError(parsed)
+        ? 'error'
+        : (parsed.data.event ?? 'progress'),
+    progress: parsed.data.progress ?? (isTerminalComplete(parsed) ? 1 : 0),
+    step: parsed.data.step ?? parsed.sseEvent,
+  }
+
+  console.log('[SSE]', parsed.sseEvent, evt)
+  onProgress(evt)
+
+  if (isTerminalError(parsed)) return 'error'
+  if (isTerminalComplete(parsed)) return 'complete'
+  return 'continue'
+}
+
+export async function createProject(
+  file: File,
+): Promise<{ project_id: string; bytes_written?: number }> {
+  if (!(file instanceof File) || file.size <= 0) {
+    throw new Error(`Invalid upload File object (size=${(file as File)?.size ?? 'n/a'})`)
+  }
+  console.log('[upload] appending File to FormData', {
+    name: file.name,
+    size: file.size,
+    type: file.type,
+    field: 'video',
+  })
+
   const form = new FormData()
-  form.append('video', file)
+  // Field name MUST match FastAPI param: video: UploadFile = File(...)
+  form.append('video', file, file.name)
+
   const res = await fetch(`${API_BASE}/projects`, {
     method: 'POST',
+    // Do NOT set Content-Type manually — browser sets multipart boundary.
     body: form,
   })
   if (!res.ok) {
     const detail = await res.text()
     throw new Error(detail || `Upload failed (${res.status})`)
   }
-  return res.json() as Promise<{ project_id: string }>
+  const json = (await res.json()) as {
+    project_id: string
+    bytes_written?: number
+  }
+  console.log('[upload] server response', json)
+  if (
+    typeof json.bytes_written === 'number' &&
+    json.bytes_written !== file.size
+  ) {
+    throw new Error(
+      `Upload size mismatch: browser file is ${file.size} bytes but server wrote ${json.bytes_written}`,
+    )
+  }
+  return json
 }
 
+/**
+ * Read an SSE stream until event:complete or event:error.
+ * No client-side time limit — waits as long as the server keeps the connection
+ * open (analyze/LLM steps can idle for minutes with only ": ping" keepalives).
+ *
+ * Important: sse-starlette emits CRLF (\\r\\n). Event boundaries are \\r\\n\\r\\n,
+ * so we normalize to \\n before splitting — splitting on "\\n\\n" alone never
+ * matches and the whole stream piles up until close, then JSON.parse fails.
+ */
 async function readSseProgress(
   res: Response,
   onProgress: (event: ProgressEvent) => void,
@@ -40,29 +137,68 @@ async function readSseProgress(
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
-  let last: ProgressEvent | null = null
+  let lastComplete: ProgressEvent | null = null
 
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const parts = buffer.split('\n\n')
-    buffer = parts.pop() ?? ''
+  const consumeParts = (parts: string[]): ProgressEvent | null => {
     for (const part of parts) {
-      const evt = parseSseChunk(part)
-      if (!evt) continue
-      last = evt
-      onProgress(evt)
-      if (evt.event === 'error') {
-        throw new Error(evt.message || emptyMessage)
+      if (!part.trim()) continue
+      // Comment-only keepalive blocks (": ping") — skip without warning.
+      const nonComment = part
+        .split('\n')
+        .map((l) => l.replace(/\r$/, ''))
+        .filter((l) => l.trim() !== '' && !l.startsWith(':'))
+      if (nonComment.length === 0) {
+        continue
       }
-      if (evt.event === 'done') {
-        return evt
+
+      let parsed: ParsedSse | null
+      try {
+        parsed = parseSseChunk(part)
+      } catch (err) {
+        console.warn('[SSE] failed to parse chunk', part, err)
+        continue
+      }
+      if (!parsed) continue
+      const result = handleParsed(parsed, onProgress)
+      if (result === 'error') {
+        throw new Error(parsed.data.message || emptyMessage)
+      }
+      if (result === 'complete') {
+        lastComplete = {
+          ...parsed.data,
+          event: 'complete',
+          status: 'done',
+          progress: parsed.data.progress ?? 1,
+        }
+        return lastComplete
       }
     }
+    return null
   }
 
-  if (last?.event === 'done') return last
+  // Loop until the server closes the stream or we see a terminal event.
+  // Intentionally no setTimeout / AbortSignal timeout here.
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) {
+      buffer += decoder.decode().replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+      if (buffer.trim()) {
+        const finished = consumeParts(buffer.split('\n\n'))
+        if (finished) return finished
+      }
+      break
+    }
+    buffer += decoder.decode(value, { stream: true })
+    // Normalize CRLF from sse-starlette so "\n\n" event delimiters work.
+    buffer = buffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() ?? ''
+    const finished = consumeParts(parts)
+    if (finished) return finished
+  }
+
+  if (lastComplete) return lastComplete
+  console.error('[SSE]', emptyMessage, { buffer })
   throw new Error(emptyMessage)
 }
 
@@ -72,6 +208,8 @@ export async function processProject(
   onProgress: (event: ProgressEvent) => void,
   signal?: AbortSignal,
 ): Promise<ProgressEvent> {
+  // No timeout on this fetch — only abort if the caller passes an explicit signal
+  // (e.g. user cancelled). Do not wrap with AbortSignal.timeout(...).
   const res = await fetch(`${API_BASE}/projects/${projectId}/process`, {
     method: 'POST',
     headers: {
@@ -84,7 +222,7 @@ export async function processProject(
       model: options.model ?? 'medium',
       force: options.force ?? false,
     }),
-    signal,
+    signal, // optional; never auto-timeout
   })
 
   return readSseProgress(res, onProgress, 'Processing ended without a completion event')
@@ -105,7 +243,7 @@ export async function exportProject(
     body: JSON.stringify({
       clean_audio: options.clean_audio ?? false,
     }),
-    signal,
+    signal, // optional; never auto-timeout
   })
   return readSseProgress(res, onProgress, 'Export ended without a completion event')
 }

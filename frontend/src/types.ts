@@ -1,5 +1,6 @@
 export type ProgressEvent = {
-  event: 'progress' | 'done' | 'error'
+  event: 'progress' | 'done' | 'complete' | 'error'
+  status?: 'done' | 'error' | string
   step: string
   progress: number
   message?: string

@@ -9,9 +9,9 @@ import {
   videoUrl,
 } from '../api'
 import { ExportModal } from '../components/ExportModal'
-import { Timeline } from '../components/Timeline'
+import { SegmentList } from '../components/SegmentList'
 import { VideoPlayer, type VideoPlayerHandle } from '../components/VideoPlayer'
-import { mergeEditWithScored } from '../lib/segments'
+import { buildSimpleEditDecision, mergeEditWithScored } from '../lib/segments'
 import type { EditSegment, ScoredSegment } from '../types'
 
 export function EditorPage() {
@@ -24,8 +24,6 @@ export function EditorPage() {
   const [focus, setFocus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
   const [exportOpen, setExportOpen] = useState(false)
   const [exportPhase, setExportPhase] = useState<
@@ -43,7 +41,6 @@ export function EditorPage() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    setSaveMessage(null)
 
     void fetchSegments(projectId)
       .then((data) => {
@@ -77,22 +74,7 @@ export function EditorPage() {
     }
   }, [projectId])
 
-  const onSave = async () => {
-    if (!projectId || saving) return
-    setSaving(true)
-    setSaveMessage(null)
-    try {
-      await patchSegments(projectId, segments)
-      setSaveMessage('Saved')
-      window.setTimeout(() => setSaveMessage(null), 2500)
-    } catch (err) {
-      setSaveMessage(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const openExportModal = () => {
+  const openSaveAndExport = () => {
     if (exporting) return
     setExportOpen(true)
     setExportPhase('options')
@@ -110,10 +92,13 @@ export function EditorPage() {
     setExportError(null)
     setExportProgress(0)
     setExportStep('save')
-    setExportMessage('Saving edit decision…')
+    setExportMessage('Saving keep/cut decisions…')
+
+    const payload = buildSimpleEditDecision(segments)
+    setSegments(payload)
 
     try {
-      await patchSegments(projectId, segments)
+      await patchSegments(projectId, payload)
       setExportStep('export')
       setExportMessage('Starting export…')
       await exportProject(
@@ -158,31 +143,30 @@ export function EditorPage() {
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
+      <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-8">
         {error ? (
           <p className="rounded-xl bg-red-950/50 px-4 py-3 text-sm text-red-200 ring-1 ring-red-500/30">
             {error}
           </p>
         ) : null}
 
-        <section>{projectId ? <VideoPlayer ref={playerRef} src={videoUrl(projectId)} /> : null}</section>
+        <section>
+          {projectId ? <VideoPlayer ref={playerRef} src={videoUrl(projectId)} /> : null}
+        </section>
 
         <section>
           {loading ? (
             <div className="rounded-xl bg-panel-2 px-4 py-8 text-center text-sm text-slate ring-1 ring-white/10">
-              Loading timeline…
+              Loading segments…
             </div>
           ) : (
-            <Timeline
+            <SegmentList
               segments={segments}
               targetMinutes={targetMinutes}
               onChange={setSegments}
               onSeek={(t) => playerRef.current?.seek(t)}
-              onSave={() => void onSave()}
-              onExport={openExportModal}
-              saving={saving}
+              onSaveAndExport={openSaveAndExport}
               exporting={exporting}
-              saveMessage={saveMessage}
             />
           )}
         </section>

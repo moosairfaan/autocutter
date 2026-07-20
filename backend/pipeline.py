@@ -142,7 +142,8 @@ def run_process(
         save_meta(project_id, meta)
 
         result = {
-            "event": "done",
+            "event": "complete",
+            "status": "done",
             "step": "done",
             "progress": 1.0,
             "message": "Processing complete",
@@ -163,6 +164,7 @@ def run_process(
             emit(
                 {
                     "event": "error",
+                    "status": "error",
                     "step": "error",
                     "progress": 0.0,
                     "message": str(exc),

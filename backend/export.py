@@ -248,7 +248,8 @@ def run_export(
         save_meta(project_id, meta)
 
         result = {
-            "event": "done",
+            "event": "complete",
+            "status": "done",
             "step": "done",
             "progress": 1.0,
             "message": "Export complete",
@@ -269,6 +270,7 @@ def run_export(
             emit(
                 {
                     "event": "error",
+                    "status": "error",
                     "step": "error",
                     "progress": 0.0,
                     "message": str(exc),
