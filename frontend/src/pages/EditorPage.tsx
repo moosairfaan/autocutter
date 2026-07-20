@@ -9,9 +9,9 @@ import {
   videoUrl,
 } from '../api'
 import { ExportModal } from '../components/ExportModal'
-import { SegmentList } from '../components/SegmentList'
+import { TimelineEditor } from '../components/TimelineEditor'
 import { VideoPlayer, type VideoPlayerHandle } from '../components/VideoPlayer'
-import { buildSimpleEditDecision, mergeEditWithScored } from '../lib/segments'
+import { mergeEditWithScored, toApiEditDecision } from '../lib/segments'
 import type { EditSegment, ScoredSegment } from '../types'
 
 export function EditorPage() {
@@ -94,11 +94,12 @@ export function EditorPage() {
     setExportStep('save')
     setExportMessage('Saving keep/cut decisions…')
 
-    const payload = buildSimpleEditDecision(segments)
-    setSegments(payload)
+    const apiPayload = toApiEditDecision(segments)
+    // Keep local state in sync with what we persist (order + clamps).
+    setSegments(mergeEditWithScored(apiPayload, scoredSegments))
 
     try {
-      await patchSegments(projectId, payload)
+      await patchSegments(projectId, apiPayload)
       setExportStep('export')
       setExportMessage('Starting export…')
       await exportProject(
@@ -143,7 +144,7 @@ export function EditorPage() {
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-8">
+      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
         {error ? (
           <p className="rounded-xl bg-red-950/50 px-4 py-3 text-sm text-red-200 ring-1 ring-red-500/30">
             {error}
@@ -157,10 +158,10 @@ export function EditorPage() {
         <section>
           {loading ? (
             <div className="rounded-xl bg-panel-2 px-4 py-8 text-center text-sm text-slate ring-1 ring-white/10">
-              Loading segments…
+              Loading timeline…
             </div>
           ) : (
-            <SegmentList
+            <TimelineEditor
               segments={segments}
               targetMinutes={targetMinutes}
               onChange={setSegments}

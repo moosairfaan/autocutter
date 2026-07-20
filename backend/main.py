@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
 from autocutter.names import video_slug
-from backend.export import run_export
+from backend.export import load_edit_decision, run_export, validate_edit_decision
 from backend.pipeline import run_process
 from backend.storage import (
     edit_decision_path,
@@ -345,14 +345,13 @@ def patch_segments(project_id: str, body: EditDecisionBody) -> dict[str, Any]:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    for seg in body.segments:
-        if seg.trim_out < seg.trim_in:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Segment {seg.id}: trim_out must be >= trim_in",
-            )
-
     payload = {"segments": [s.model_dump() for s in body.segments]}
+    try:
+        # Allow saving with zero kept; still validate trims/order of any kept.
+        validate_edit_decision(payload, require_kept=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     path = edit_decision_path(project_id)
     with path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2, ensure_ascii=False)
@@ -390,6 +389,16 @@ async def export_project(
         project_dir(project_id)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    # Validate trims + order before starting SSE so clients get a clear 400
+    # instead of a cryptic ffmpeg failure mid-stream.
+    try:
+        decision = load_edit_decision(project_id)
+        validate_edit_decision(decision, require_kept=True)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     opts = body or ExportBody()
 

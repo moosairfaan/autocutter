@@ -259,7 +259,7 @@ export async function fetchSegments(projectId: string): Promise<SegmentsResponse
 
 export async function patchSegments(
   projectId: string,
-  segments: import('./types').EditSegment[],
+  segments: import('./types').ApiEditSegment[],
 ): Promise<void> {
   const res = await fetch(`${API_BASE}/projects/${projectId}/segments`, {
     method: 'PATCH',

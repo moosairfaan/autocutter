@@ -12,7 +12,6 @@ from backend.storage import (
     export_path,
     find_video,
     load_meta,
-    project_dir,
     save_meta,
 )
 
@@ -69,25 +68,132 @@ def load_edit_decision(project_id: str) -> dict[str, Any]:
     return data
 
 
-def kept_clips(decision: dict[str, Any]) -> list[dict[str, Any]]:
-    kept = [s for s in decision["segments"] if s.get("keep")]
-    kept.sort(key=lambda s: (int(s.get("order", 0)), float(s.get("trim_in", 0))))
-    clips: list[dict[str, Any]] = []
+def _resolve_trims(seg: dict[str, Any]) -> tuple[float, float]:
+    """Read trim bounds from API (trim_in/out) or client camelCase (trimStart/End).
+
+    Never falls back to original start/end — missing trims are an error.
+    """
+    sid = seg.get("id", "?")
+    if "trim_in" in seg and "trim_out" in seg:
+        return float(seg["trim_in"]), float(seg["trim_out"])
+    if "trimStart" in seg and "trimEnd" in seg:
+        return float(seg["trimStart"]), float(seg["trimEnd"])
+    raise ValueError(
+        f"Segment {sid}: missing trim_in/trim_out (or trimStart/trimEnd)"
+    )
+
+
+def validate_edit_decision(
+    decision: dict[str, Any],
+    *,
+    require_kept: bool = True,
+) -> list[dict[str, Any]]:
+    """Validate kept segments' trims and order; return clips sorted by ``order``.
+
+    Raises ``ValueError`` with a clear message on:
+    - trimEnd/trim_out <= trimStart/trim_in
+    - duplicate or gapped ``order`` values among kept segments
+      (must be exactly 0..n-1)
+    - no kept segments when ``require_kept`` is True
+    """
+    segments = decision.get("segments")
+    if not isinstance(segments, list):
+        raise ValueError("edit_decision must contain a 'segments' list")
+
+    kept = [s for s in segments if s.get("keep")]
+    if not kept:
+        if require_kept:
+            raise ValueError("No kept segments to export")
+        return []
+
+    problems: list[str] = []
+    pending: list[dict[str, Any]] = []
+
     for seg in kept:
-        trim_in = float(seg["trim_in"])
-        trim_out = float(seg["trim_out"])
-        if trim_out <= trim_in:
+        sid = seg.get("id", "?")
+        try:
+            trim_in, trim_out = _resolve_trims(seg)
+        except (TypeError, ValueError) as exc:
+            problems.append(str(exc))
             continue
-        clips.append(
+
+        if trim_out <= trim_in:
+            problems.append(
+                f"Segment {sid}: trim_out/trimEnd ({trim_out}) must be greater "
+                f"than trim_in/trimStart ({trim_in})"
+            )
+            continue
+
+        try:
+            order = int(seg["order"]) if "order" in seg else -1
+        except (TypeError, ValueError):
+            problems.append(f"Segment {sid}: order must be an integer")
+            continue
+
+        if order < 0:
+            problems.append(
+                f"Segment {sid}: kept segment has invalid order {order} "
+                f"(expected 0..{len(kept) - 1})"
+            )
+            continue
+
+        try:
+            seg_id = int(sid)
+        except (TypeError, ValueError):
+            problems.append(f"Segment {sid}: id must be an integer")
+            continue
+
+        pending.append(
             {
-                "id": int(seg["id"]),
+                "id": seg_id,
+                "order": order,
                 "trim_in": trim_in,
                 "trim_out": trim_out,
             }
         )
-    if not clips:
-        raise ValueError("No kept segments with valid trim_in/trim_out to export")
-    return clips
+
+    if pending:
+        orders = [c["order"] for c in pending]
+        n = len(pending)
+        expected = set(range(n))
+        actual = set(orders)
+
+        duplicates = sorted({o for o in orders if orders.count(o) > 1})
+        if duplicates:
+            problems.append(
+                f"Duplicate order values among kept segments: {duplicates}"
+            )
+
+        if actual != expected:
+            missing = sorted(expected - actual)
+            unexpected = sorted(actual - expected)
+            bits: list[str] = []
+            if missing:
+                bits.append(f"missing {missing}")
+            if unexpected:
+                bits.append(f"unexpected {unexpected}")
+            problems.append(
+                f"Kept segment order must be contiguous 0..{n - 1} with no "
+                f"gaps or duplicates ({', '.join(bits)}; got {sorted(orders)})"
+            )
+
+    if problems:
+        raise ValueError("Invalid edit decision: " + "; ".join(problems))
+
+    pending.sort(key=lambda c: c["order"])
+    return [
+        {
+            "id": c["id"],
+            "trim_in": c["trim_in"],
+            "trim_out": c["trim_out"],
+        }
+        for c in pending
+    ]
+
+
+def kept_clips(decision: dict[str, Any]) -> list[dict[str, Any]]:
+    """Kept clips in edit ``order``, using each segment's trim_in/trim_out."""
+    return validate_edit_decision(decision, require_kept=True)
 
 
 # Applied to the concatenated audio when clean_audio=True.
@@ -106,7 +212,11 @@ def build_filter_complex(
     has_audio: bool,
     clean_audio: bool = False,
 ) -> str:
-    """Build trim/setpts (+ atrim) chains and a final concat for edit order."""
+    """Build trim/setpts (+ atrim) chains and a final concat in edit order.
+
+    Each clip uses its own trim_in/trim_out (not original start/end). Clip list
+    order is the concat sequence (already sorted by ``order``).
+    """
     parts: list[str] = []
     concat_pads: list[str] = []
 

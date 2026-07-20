@@ -88,7 +88,7 @@ function SegmentBlock({
     e.preventDefault()
     e.stopPropagation()
     const startX = e.clientX
-    const startValue = edge === 'in' ? seg.trim_in : seg.trim_out
+    const startValue = edge === 'in' ? seg.trimStart : seg.trimEnd
     const target = e.currentTarget
     target.setPointerCapture(e.pointerId)
 
@@ -203,7 +203,7 @@ export function Timeline({
     () =>
       segments
         .filter((s) => !s.keep)
-        .sort((a, b) => (a.start ?? a.trim_in) - (b.start ?? b.trim_in)),
+        .sort((a, b) => a.start - b.start),
     [segments],
   )
 
@@ -232,7 +232,7 @@ export function Timeline({
   }
 
   const handleToggleSeek = (seg: EditSegment) => {
-    onSeek(seg.trim_in)
+    onSeek(seg.trimStart)
     onChange(toggleKeep(segments, seg.id))
   }
 

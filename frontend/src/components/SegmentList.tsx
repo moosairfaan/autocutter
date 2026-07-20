@@ -33,20 +33,13 @@ export function SegmentList({
   exporting,
 }: Props) {
   const chronological = useMemo(
-    () =>
-      [...segments].sort(
-        (a, b) => (a.start ?? a.trim_in) - (b.start ?? b.trim_in),
-      ),
+    () => [...segments].sort((a, b) => a.start - b.start),
     [segments],
   )
 
   const keptSeconds = chronological
     .filter((s) => s.keep)
-    .reduce((sum, s) => {
-      const start = s.start ?? s.trim_in
-      const end = s.end ?? s.trim_out
-      return sum + Math.max(0, end - start)
-    }, 0)
+    .reduce((sum, s) => sum + Math.max(0, s.trimEnd - s.trimStart), 0)
   const targetSeconds = targetMinutes != null ? targetMinutes * 60 : null
   const keptCount = chronological.filter((s) => s.keep).length
 
@@ -84,8 +77,8 @@ export function SegmentList({
 
       <ul className="max-h-[55vh] space-y-1.5 overflow-y-auto pr-1">
         {chronological.map((seg) => {
-          const start = seg.start ?? seg.trim_in
-          const end = seg.end ?? seg.trim_out
+          const start = seg.trimStart
+          const end = seg.trimEnd
           return (
             <li key={seg.id}>
               <div
