@@ -79,7 +79,18 @@ autocutter --video path/to/footage.mp4 --target-minutes 30 \
   --focus "life on Long Island as new grads"
 ```
 
-Useful extras: `--skip-to select` to re-cut from cached scores, `--force` to ignore caches, `--model small` for a faster Whisper model.
+Useful extras: `--skip-to select` to re-cut from cached scores, `--force` to ignore caches, `--model small` / `--no-word-timestamps` for a faster Whisper run (or set `WHISPER_MODEL` / `WHISPER_WORD_TIMESTAMPS` in `.env`).
+
+### Fast Whisper (demo)
+
+Defaults stay `medium` + word timestamps. For a quicker pass, put this in `./.env` or `~/.autocutter/.env` (restart the API after changing):
+
+```bash
+WHISPER_MODEL=small
+WHISPER_WORD_TIMESTAMPS=false
+```
+
+Or on the CLI: `autocutter --model small --no-word-timestamps ...`. At start of transcription the process logs `Whisper config: model=... word_timestamps=...`.
 
 ### What the CLI gives you
 

@@ -25,6 +25,9 @@ api = [
     "python-multipart>=0.0.12",
     "sse-starlette>=2.1.0",
 ]
+dev = [
+    "pytest>=8.0",
+]
 
 [project.scripts]
 autocutter = "autocutter.cli:main"
@@ -32,3 +35,10 @@ autocutter = "autocutter.cli:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["autocutter*", "backend*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = [
+    "ignore::pytest.PytestDeprecationWarning",
+]

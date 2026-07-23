@@ -219,7 +219,11 @@ export async function processProject(
     body: JSON.stringify({
       focus: options.focus || null,
       target_minutes: options.target_minutes ?? null,
-      model: options.model ?? 'medium',
+      // Omit model so the backend can use WHISPER_MODEL env (default medium).
+      ...(options.model != null ? { model: options.model } : {}),
+      ...(options.word_timestamps != null
+        ? { word_timestamps: options.word_timestamps }
+        : {}),
       force: options.force ?? false,
     }),
     signal, // optional; never auto-timeout

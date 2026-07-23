@@ -3,16 +3,51 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from faster_whisper import WhisperModel
 
-from autocutter import AUTOCUTTER_MODELS
+from autocutter import AUTOCUTTER_ENV, AUTOCUTTER_MODELS
 
 # Split when the gap between consecutive words exceeds this (seconds).
 PAUSE_THRESHOLD_S = 0.6
+
+DEFAULT_WHISPER_MODEL = "medium"
+DEFAULT_WORD_TIMESTAMPS = True
+
+
+def _load_whisper_env() -> None:
+    """Load .env files the same way as the API key (home then cwd)."""
+    load_dotenv(AUTOCUTTER_ENV)
+    load_dotenv()
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def resolve_whisper_model(explicit: str | None = None) -> str:
+    """CLI/API override → WHISPER_MODEL env → medium."""
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    _load_whisper_env()
+    env = (os.environ.get("WHISPER_MODEL") or "").strip()
+    return env or DEFAULT_WHISPER_MODEL
+
+
+def resolve_word_timestamps(explicit: bool | None = None) -> bool:
+    """CLI/API override → WHISPER_WORD_TIMESTAMPS env → True."""
+    if explicit is not None:
+        return bool(explicit)
+    _load_whisper_env()
+    return _env_bool("WHISPER_WORD_TIMESTAMPS", DEFAULT_WORD_TIMESTAMPS)
 
 # Sentence-ending punctuation, optionally followed by closing quotes/brackets.
 _SENTENCE_END_RE = re.compile(r'[.?!]["\')\]]*$')
@@ -90,14 +125,19 @@ def segments_to_natural_boundaries(
 
 def transcribe(
     audio_path: Path,
-    model_size: str = "medium",
+    model_size: str | None = None,
     output_dir: Path | None = None,
+    *,
+    word_timestamps: bool | None = None,
 ) -> list[dict[str, Any]]:
     """Transcribe *audio_path* and save segments to *output_dir*/transcript.json.
 
-    Uses faster-whisper with word-level timestamps, then regroups words on
-    sentence endings / long pauses so cut points land on clean boundaries.
-    Runs on CPU with int8 by default. Models cache under ~/.autocutter/models.
+    Uses faster-whisper, then regroups on sentence endings / long pauses so cut
+    points land on clean boundaries. Runs on CPU with int8 by default. Models
+    cache under ~/.autocutter/models.
+
+    ``model_size`` / ``word_timestamps`` default from env (``WHISPER_MODEL``,
+    ``WHISPER_WORD_TIMESTAMPS``) then to medium / True when unset.
     """
     audio_path = Path(audio_path)
     if output_dir is None:
@@ -106,6 +146,13 @@ def transcribe(
         output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     AUTOCUTTER_MODELS.mkdir(parents=True, exist_ok=True)
+
+    model_size = resolve_whisper_model(model_size)
+    use_word_ts = resolve_word_timestamps(word_timestamps)
+    print(
+        f"Whisper config: model={model_size!r} "
+        f"word_timestamps={use_word_ts} (device=cpu, compute_type=int8)"
+    )
 
     print(f"Loading Whisper model '{model_size}' (CPU, int8)...")
     try:
@@ -125,17 +172,18 @@ def transcribe(
             download_root=str(AUTOCUTTER_MODELS),
         )
 
-    print(f"Transcribing {audio_path} (word timestamps)...")
+    ts_label = "word timestamps" if use_word_ts else "segment timestamps"
+    print(f"Transcribing {audio_path} ({ts_label})...")
     segments_iter, _info = model.transcribe(
         str(audio_path),
-        word_timestamps=True,
+        word_timestamps=use_word_ts,
     )
 
     word_level: list[dict[str, Any]] = []
     whisper_seg_count = 0
     for segment in segments_iter:
         whisper_seg_count += 1
-        if segment.words:
+        if use_word_ts and segment.words:
             for word in segment.words:
                 word_level.append(
                     {
@@ -145,7 +193,7 @@ def transcribe(
                     }
                 )
         elif segment.text and segment.text.strip():
-            # Fallback if a segment has no word timings.
+            # No word timings (disabled or missing) — use segment span.
             word_level.append(
                 {
                     "word": segment.text,
@@ -156,7 +204,7 @@ def transcribe(
         if whisper_seg_count % 20 == 0:
             print(
                 f"  transcribed {whisper_seg_count} whisper chunks... "
-                f"({len(word_level)} words, last end={segment.end:.1f}s)"
+                f"({len(word_level)} tokens, last end={segment.end:.1f}s)"
             )
 
     segments = segments_to_natural_boundaries(word_level)
@@ -166,7 +214,7 @@ def transcribe(
         json.dump(segments, f, indent=2, ensure_ascii=False)
 
     print(
-        f"Transcription complete: {len(word_level)} words → "
+        f"Transcription complete: {len(word_level)} tokens → "
         f"{len(segments)} sentence/pause segments → {transcript_path}"
     )
     return segments

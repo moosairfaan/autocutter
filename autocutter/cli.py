@@ -51,8 +51,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        default="medium",
-        help="Whisper model size (default: medium)",
+        default=None,
+        help=(
+            "Whisper model size (default: WHISPER_MODEL env or medium). "
+            "Example: --model small"
+        ),
+    )
+    parser.add_argument(
+        "--word-timestamps",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Enable/disable Whisper word-level timestamps "
+            "(default: WHISPER_WORD_TIMESTAMPS env or true). "
+            "Use --no-word-timestamps for a faster demo run."
+        ),
     )
     parser.add_argument(
         "--api-key-env",
@@ -361,6 +374,7 @@ def run_interactive() -> argparse.Namespace | None:
         video=video_path,
         target_minutes=target_minutes,
         model=model,
+        word_timestamps=None,
         api_key_env="ANTHROPIC_API_KEY",
         output_dir=output_base,
         force=False,
@@ -538,7 +552,12 @@ def run_pipeline(args: argparse.Namespace) -> Path:
             return []
         if load_transcript:
             return _load_json(transcript_path)
-        return transcribe(audio_path, args.model, output_dir=output_dir)
+        return transcribe(
+            audio_path,
+            args.model,
+            output_dir=output_dir,
+            word_timestamps=getattr(args, "word_timestamps", None),
+        )
 
     transcript = _run_step(
         2,

@@ -96,7 +96,7 @@ export function UploadPage() {
             <label className="block space-y-1.5 sm:col-span-1">
               <span className="text-sm font-medium text-ink">Whisper model</span>
               <div className="rounded-xl border border-ink/10 bg-mist/50 px-3 py-2.5 text-sm text-slate">
-                medium (default)
+                from env / medium
               </div>
             </label>
           </div>

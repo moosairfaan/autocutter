@@ -46,7 +46,10 @@ app.add_middleware(
 class ProcessBody(BaseModel):
     focus: str | None = None
     target_minutes: float | None = None
-    model: str = "medium"
+    # None → WHISPER_MODEL env → "medium"
+    model: str | None = None
+    # None → WHISPER_WORD_TIMESTAMPS env → True
+    word_timestamps: bool | None = None
     force: bool = False
 
 
@@ -298,6 +301,7 @@ async def process_project(
             focus=opts.focus,
             target_minutes=opts.target_minutes,
             model=opts.model,
+            word_timestamps=opts.word_timestamps,
             force=opts.force,
             emit=emit,
         )

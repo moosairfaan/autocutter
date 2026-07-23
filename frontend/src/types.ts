@@ -74,5 +74,6 @@ export type ProcessOptions = {
   focus?: string | null
   target_minutes?: number | null
   model?: string
+  word_timestamps?: boolean
   force?: boolean
 }

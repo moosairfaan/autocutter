@@ -12,7 +12,11 @@ from autocutter import AUTOCUTTER_ENV
 from autocutter.analyze import analyze_transcript, load_scored_file
 from autocutter.extract_audio import extract_audio
 from autocutter.select_segments import select_segments
-from autocutter.transcribe import transcribe
+from autocutter.transcribe import (
+    resolve_whisper_model,
+    resolve_word_timestamps,
+    transcribe,
+)
 
 from backend.storage import (
     build_initial_edit_decision,
@@ -43,7 +47,8 @@ def run_process(
     *,
     focus: str | None = None,
     target_minutes: float | None = None,
-    model: str = "medium",
+    model: str | None = None,
+    word_timestamps: bool | None = None,
     force: bool = False,
     emit: EmitFn | None = None,
 ) -> dict[str, Any]:
@@ -83,14 +88,26 @@ def run_process(
         _emit("extract", 0.15, "Audio ready")
 
         # --- transcribe ---
-        _emit("transcribe", 0.18, "Transcribing with Whisper...")
+        resolved_model = resolve_whisper_model(model)
+        resolved_wt = resolve_word_timestamps(word_timestamps)
+        _emit(
+            "transcribe",
+            0.18,
+            f"Transcribing with Whisper "
+            f"(model={resolved_model}, word_timestamps={resolved_wt})...",
+        )
         if (
             force
             or not transcript_path.is_file()
             or transcript_path.stat().st_size == 0
             or transcript_path.stat().st_mtime < audio_path.stat().st_mtime
         ):
-            transcript = transcribe(audio_path, model_size=model, output_dir=root)
+            transcript = transcribe(
+                audio_path,
+                model_size=model,
+                output_dir=root,
+                word_timestamps=word_timestamps,
+            )
         else:
             with transcript_path.open(encoding="utf-8") as f:
                 transcript = json.load(f)
