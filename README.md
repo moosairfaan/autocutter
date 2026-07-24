@@ -4,59 +4,50 @@ Turn long-form video/podcast footage into a rough cut automatically, using AI to
 
 ## Two ways to use this
 
-**1. CLI tool → Final Cut Pro X**
-The original version. Outputs an `.fcpxml` file + a readable edit report — you import the XML into Final Cut Pro X to review/finish the edit yourself. No rendered video, no cloud, just decisions handed to FCP.
+**1. CLI tool → Final Cut Pro X**  
+Outputs an `.fcpxml` file + a readable edit report — import into Final Cut Pro X to finish the edit. No rendered video, no cloud.
 
-**2. Web app → downloadable MP4**
-The newer version. A local web app (FastAPI backend + React frontend) where you upload a video, review the AI's suggested cuts in a browser UI (approve/reject each segment), and export a finished, already-cut MP4 directly — no Final Cut Pro required at all. Runs entirely on your machine.
+**2. Web app → downloadable MP4**  
+Local FastAPI + React app: upload a video, review AI cuts on a timeline (keep/cut, drag-to-reorder, trim handles), export a finished H.264/AAC MP4. No Final Cut Pro required.
 
 ## Why local-only?
 
-This runs entirely on your machine — no hosted version, no cloud deployment planned for now. Reasons:
-- Whisper transcription and video export are compute/time-heavy (minutes, not seconds) — not a fit for typical serverless hosting
-- Large video files (podcasts/vlogs can be several GB) don't play well with most hosting upload limits
-- You bring your own Anthropic API key and pay for your own usage — no shared key, no surprise bills
-- Your video never leaves your machine
-
-If you want to use this, clone it and run it locally (instructions below). A packaged desktop app (no terminal required) may come later, but there's no plan for a hosted web version.
+- Whisper transcription and video export are compute-heavy (minutes, not seconds)
+- Large source files don’t fit typical hosted upload limits
+- You bring your own Anthropic API key — no shared billing
+- Footage never leaves your machine
 
 ## Status
 
 - CLI + FCPXML export: working
-- Web app: working — upload, transcribe, AI scoring, timeline keep/cut, drag-to-reorder, trim handles, export finished MP4
+- Web app: working — upload, Whisper, Claude scoring, timeline keep/cut, drag-to-reorder, trim handles, Save & Export MP4
+- Config: Whisper model / word-timestamps via `.env` or CLI flags
+- Tests: pytest suite for scoring (mocked Anthropic) and FCPXML generation (mocked ffprobe)
 
 ## Requirements
 
-Shared (both tools):
+**Shared**
 
 - macOS
 - Python 3.11+
-- [ffmpeg](https://ffmpeg.org/) on your `PATH` (`brew install ffmpeg`)
-- An [Anthropic API key](https://console.anthropic.com/)
+- [ffmpeg](https://ffmpeg.org/) on `PATH` (`brew install ffmpeg`)
+- [Anthropic API key](https://console.anthropic.com/)
 
-CLI only:
+**CLI only:** Final Cut Pro X (to import `.fcpxml`)
 
-- Final Cut Pro X (to import the `.fcpxml`)
+**Web only:** Node.js 18+
 
-Web app only:
-
-- Node.js 18+ (for the React/Vite frontend)
-
-## Install (shared base)
+## Install
 
 ```bash
 git clone <repo-url>
 cd autocutter
 python3 -m venv venv && source venv/bin/activate
 pip install -e .
-cp .env.example .env   # then add your ANTHROPIC_API_KEY
+cp .env.example .env   # set ANTHROPIC_API_KEY
 ```
 
 Or paste the key on first CLI run / save it to `~/.autocutter/.env`.
-
-### CLI-only extras
-
-Nothing else — `pip install -e .` is enough for the `autocutter` command.
 
 ### Web app extras
 
@@ -66,43 +57,58 @@ pip install -e '.[api]'
 cd frontend && npm install && cd ..
 ```
 
-## Quick start — CLI → Final Cut Pro X
+### Dev / tests
 
 ```bash
 source venv/bin/activate
-
-# Interactive prompts
-autocutter
-
-# Or flags
-autocutter --video path/to/footage.mp4 --target-minutes 30 \
-  --focus "life on Long Island as new grads"
+pip install -e '.[dev]'
+pytest
 ```
 
-Useful extras: `--skip-to select` to re-cut from cached scores, `--force` to ignore caches, `--model small` / `--no-word-timestamps` for a faster Whisper run (or set `WHISPER_MODEL` / `WHISPER_WORD_TIMESTAMPS` in `.env`).
+## Configuration (`.env`)
 
-### Fast Whisper (demo)
+Copy `.env.example` → `./.env` or `~/.autocutter/.env`:
 
-Defaults stay `medium` + word timestamps. For a quicker pass, put this in `./.env` or `~/.autocutter/.env` (restart the API after changing):
+| Variable | Default | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | *(required)* | Claude scoring |
+| `WHISPER_MODEL` | `medium` | faster-whisper size (`tiny` / `base` / `small` / `medium` / `large`) |
+| `WHISPER_WORD_TIMESTAMPS` | `true` | Word-level timestamps (`false` is faster for demos) |
+
+Restart the API after changing env vars. Delete or force-refresh `transcript.json` if you already transcribed with different settings.
+
+**Fast demo:**
 
 ```bash
 WHISPER_MODEL=small
 WHISPER_WORD_TIMESTAMPS=false
 ```
 
-Or on the CLI: `autocutter --model small --no-word-timestamps ...`. At start of transcription the process logs `Whisper config: model=... word_timestamps=...`.
+## Quick start — CLI → Final Cut Pro X
 
-### What the CLI gives you
+```bash
+source venv/bin/activate
 
-It does **not** render an edited video. It writes under `./output/<video-slug>/`:
+# Interactive
+autocutter
 
-- `autocut.fcpxml` — import via **File → Import → XML** in Final Cut Pro X
-- `edit_report.md` — keep/cut decisions for a quick sanity check
-- Cached intermediates: `audio.wav`, `transcript.json`, `scored_segments.json`
+# Flags
+autocutter --video path/to/footage.mp4 --target-minutes 30 \
+  --focus "life on Long Island as new grads"
+
+# Faster Whisper
+autocutter --video path/to/footage.mp4 --model small --no-word-timestamps
+```
+
+Useful flags: `--skip-to select` (re-cut from cached scores), `--force` (ignore caches), `--model`, `--word-timestamps` / `--no-word-timestamps`.
+
+### CLI output (`./output/<video-slug>/`)
+
+- `autocut.fcpxml` — **File → Import → XML** in Final Cut Pro X
+- `edit_report.md` — keep/cut sanity check
+- Caches: `audio.wav`, `transcript.json`, `scored_segments.json`
 
 ## Quick start — Web app → MP4
-
-Two terminals, from the repo root:
 
 ```bash
 # Terminal 1 — API
@@ -115,25 +121,46 @@ cd frontend && npm run dev
 
 Open http://localhost:5173 (Vite proxies `/api` → `:8000`).
 
-Flow: upload video → set target length / focus → process (Whisper + Claude) → approve/reject segments in the browser → **Save & Export** → download the MP4.
+**Flow**
+
+1. Upload video → set target length / optional focus
+2. Process (ffmpeg → Whisper → Claude → select) with live SSE progress
+3. Edit on the timeline: keep/cut, drag blocks to reorder, drag edges to trim
+4. **Save & Export** → optional audio cleanup → download MP4
 
 Projects and Whisper models live under `~/.autocutter/` (`projects/`, `models/`, optional `.env`).
 
+### Web editor details
+
+- Kept blocks are ordered by `order` (not source chronology); width ∝ trim length
+- Cut segments sit in a collapsed list; restoring one appends to the end of the timeline
+- Export uses each segment’s `trim_in` / `trim_out` and concat order from `order`
+- Invalid trims or gapped/duplicate orders return a clear HTTP 400 before ffmpeg runs
+
 ## How it works
 
-Same core pipeline for both tools:
-
-1. **Extract audio** with ffmpeg
-2. **Transcribe** with faster-whisper (word-level timestamps → sentence/pause segments)
-3. **Score segments** with Claude (interest + optional theme)
-4. **Select** a keep set for your target length
+1. **Extract audio** — ffmpeg → `audio.wav`
+2. **Transcribe** — faster-whisper → word/segment timestamps → sentence/pause segments (`transcript.json`)
+3. **Score** — Claude scores ~12‑minute chunks (`score`, `tag`, `on_theme`) → `scored_segments.json`
+4. **Select** — greedy cut-worst-first to hit target length (theme as tie-break) → `edit_decision.json`
 5. **Output**
    - CLI: FCPXML + edit report
-   - Web: keep/cut UI → ffmpeg trim+concat → downloadable H.264/AAC MP4 (optional audio cleanup)
+   - Web: timeline edits → PATCH segments → ffmpeg `trim` + `concat` → `export.mp4`
+
+Progress for long jobs streams over **SSE** (in-process worker thread; no external job queue yet).
+
+## Project layout
+
+```
+autocutter/          # Shared library + CLI (transcribe, analyze, select, FCPXML)
+backend/             # FastAPI (upload, process SSE, segments, export)
+frontend/            # React + Vite timeline editor
+tests/               # pytest (mocked Anthropic + FCPXML)
+```
 
 ## Cost
 
-Anthropic usage scales with footage length. Scoring runs in ~12-minute chunks, so expect roughly **~5 API calls per hour** of video (plus a bit of overlap). Transcription and export are local and don't hit Anthropic.
+Anthropic usage scales with footage length. Scoring uses ~12‑minute chunks → roughly **~5 API calls per hour** of video (plus overlap). Transcription and export are local.
 
 ## License
 
