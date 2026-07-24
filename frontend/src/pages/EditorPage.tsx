@@ -8,7 +8,7 @@ import {
   patchSegments,
   videoUrl,
 } from '../api'
-import { ExportModal } from '../components/ExportModal'
+import { ExportModal, type ExportResolution } from '../components/ExportModal'
 import { TimelineEditor } from '../components/TimelineEditor'
 import { VideoPlayer, type VideoPlayerHandle } from '../components/VideoPlayer'
 import { mergeEditWithScored, toApiEditDecision } from '../lib/segments'
@@ -30,6 +30,7 @@ export function EditorPage() {
     'options' | 'running' | 'done' | 'error'
   >('options')
   const [cleanAudio, setCleanAudio] = useState(false)
+  const [resolution, setResolution] = useState<ExportResolution>('original')
   const [exporting, setExporting] = useState(false)
   const [exportProgress, setExportProgress] = useState(0)
   const [exportStep, setExportStep] = useState('')
@@ -79,6 +80,7 @@ export function EditorPage() {
     setExportOpen(true)
     setExportPhase('options')
     setCleanAudio(false)
+    setResolution('original')
     setExportError(null)
     setExportProgress(0)
     setExportStep('')
@@ -109,7 +111,7 @@ export function EditorPage() {
           setExportStep(evt.step)
           setExportMessage(evt.message ?? '')
         },
-        { clean_audio: cleanAudio },
+        { clean_audio: cleanAudio, resolution },
       )
       setExportPhase('done')
       setExportProgress(1)
@@ -123,41 +125,41 @@ export function EditorPage() {
   }
 
   return (
-    <div className="min-h-screen bg-panel text-paper">
-      <header className="flex items-center justify-between gap-4 border-b border-white/10 px-6 py-4">
-        <div className="flex items-center gap-4">
+    <div className="min-h-screen bg-panel text-ink">
+      <header className="sticky top-0 z-40 flex items-center justify-between gap-4 border-b border-white/10 bg-panel/90 px-6 py-4 backdrop-blur-md">
+        <div className="flex min-w-0 items-center gap-4">
           <Link
             to="/"
-            className="font-display text-lg font-bold tracking-tight text-accent hover:text-white"
+            className="shrink-0 font-display text-lg font-bold tracking-tight text-accent transition hover:text-white"
           >
             autocutter
           </Link>
-          <span className="font-mono text-xs text-slate">{projectId}</span>
+          <span className="truncate font-mono text-xs text-slate">{projectId}</span>
         </div>
-        <div className="text-sm text-mist">
+        <div className="shrink-0 text-sm text-slate">
           {loading
             ? 'Loading segments…'
             : `${scoredSegments.length} segments`}
           {focus ? (
-            <span className="ml-3 hidden text-slate sm:inline">· focus: {focus}</span>
+            <span className="ml-3 hidden text-slate/80 sm:inline">· focus: {focus}</span>
           ) : null}
         </div>
       </header>
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8">
+      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-8">
         {error ? (
-          <p className="rounded-xl bg-red-950/50 px-4 py-3 text-sm text-red-200 ring-1 ring-red-500/30">
+          <p className="rounded-2xl bg-cut/10 px-4 py-3 text-sm text-cut ring-1 ring-cut/30">
             {error}
           </p>
         ) : null}
 
-        <section>
+        <section className="rounded-2xl bg-panel-2 p-4 shadow-lg shadow-black/30 ring-1 ring-white/10 sm:p-5">
           {projectId ? <VideoPlayer ref={playerRef} src={videoUrl(projectId)} /> : null}
         </section>
 
         <section>
           {loading ? (
-            <div className="rounded-xl bg-panel-2 px-4 py-8 text-center text-sm text-slate ring-1 ring-white/10">
+            <div className="rounded-2xl bg-panel-2 px-6 py-12 text-center text-sm text-slate shadow-lg shadow-black/30 ring-1 ring-white/10">
               Loading timeline…
             </div>
           ) : (
@@ -178,6 +180,8 @@ export function EditorPage() {
         phase={exportPhase}
         cleanAudio={cleanAudio}
         onCleanAudioChange={setCleanAudio}
+        resolution={resolution}
+        onResolutionChange={setResolution}
         progress={exportProgress}
         step={exportStep}
         message={exportMessage}

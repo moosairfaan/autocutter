@@ -74,6 +74,7 @@ Copy `.env.example` → `./.env` or `~/.autocutter/.env`:
 | `ANTHROPIC_API_KEY` | *(required)* | Claude scoring |
 | `WHISPER_MODEL` | `medium` | faster-whisper size (`tiny` / `base` / `small` / `medium` / `large`) |
 | `WHISPER_WORD_TIMESTAMPS` | `true` | Word-level timestamps (`false` is faster for demos) |
+| `TRIM_FILLER_WORDS` | `false` | At export, micro-cut `um`/`uh` (and cautious `like`/`so`/`right`) inside kept segments — needs `words.json` |
 
 Restart the API after changing env vars. Delete or force-refresh `transcript.json` if you already transcribed with different settings.
 

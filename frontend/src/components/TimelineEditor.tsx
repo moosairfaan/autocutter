@@ -58,10 +58,15 @@ function formatMinutes(seconds: number): string {
 }
 
 function blockClasses(seg: EditSegment): string {
+  // Kept blocks: score bands on ok / accent / cut for clear keep vs cut language.
   const score = seg.score ?? 5
-  if (score >= 7) return 'bg-emerald-600/90 text-emerald-50 ring-emerald-400/40'
-  if (score >= 4) return 'bg-amber-500/90 text-amber-950 ring-amber-300/40'
-  return 'bg-red-600/80 text-red-50 ring-red-400/40'
+  if (score >= 7) {
+    return 'bg-ok/90 text-panel shadow-md shadow-ok/20 ring-1 ring-ok/50'
+  }
+  if (score >= 4) {
+    return 'bg-accent/85 text-white shadow-md shadow-accent/25 ring-1 ring-accent/40'
+  }
+  return 'bg-cut/85 text-white shadow-md shadow-cut/20 ring-1 ring-cut/40'
 }
 
 function TimelineBlock({
@@ -126,9 +131,9 @@ function TimelineBlock({
       ref={setNodeRef}
       style={{ ...style, width }}
       className={[
-        'relative flex h-[4.5rem] shrink-0 select-none flex-col justify-between overflow-visible rounded-md ring-1 transition',
+        'relative flex h-[4.75rem] shrink-0 select-none flex-col justify-between overflow-visible rounded-xl transition',
         blockClasses(seg),
-        seg.on_theme ? 'outline outline-2 outline-offset-1 outline-cyan-300' : '',
+        seg.on_theme ? 'outline outline-2 outline-offset-2 outline-accent' : '',
         isDragging ? 'opacity-40' : '',
       ].join(' ')}
       title={`#${seg.id} · ${formatTimecode(seg.trimStart)}–${formatTimecode(seg.trimEnd)}\n${seg.text ?? ''}`}
@@ -139,7 +144,7 @@ function TimelineBlock({
             type="button"
             data-trim="in"
             aria-label="Trim start"
-            className="absolute inset-y-0 left-0 z-20 w-2.5 cursor-ew-resize rounded-l-md bg-black/35 hover:bg-white/50"
+            className="absolute inset-y-0 left-0 z-20 w-2.5 cursor-ew-resize rounded-l-xl bg-black/40 hover:bg-white/50"
             onPointerDown={(e) => startTrim('in', e)}
             onClick={(e) => e.stopPropagation()}
           />
@@ -147,7 +152,7 @@ function TimelineBlock({
             type="button"
             data-trim="out"
             aria-label="Trim end"
-            className="absolute inset-y-0 right-0 z-20 w-2.5 cursor-ew-resize rounded-r-md bg-black/35 hover:bg-white/50"
+            className="absolute inset-y-0 right-0 z-20 w-2.5 cursor-ew-resize rounded-r-xl bg-black/40 hover:bg-white/50"
             onPointerDown={(e) => startTrim('out', e)}
             onClick={(e) => e.stopPropagation()}
           />
@@ -157,7 +162,7 @@ function TimelineBlock({
       {trimTooltip ? (
         <div
           className={[
-            'pointer-events-none absolute -top-7 z-30 rounded bg-ink px-1.5 py-0.5 font-mono text-[10px] text-paper shadow ring-1 ring-white/20',
+            'pointer-events-none absolute -top-8 z-30 rounded-lg bg-panel px-2 py-1 font-mono text-[10px] text-ink shadow-lg ring-1 ring-white/15',
             trimTooltip.edge === 'in' ? 'left-0' : 'right-0',
           ].join(' ')}
         >
@@ -168,13 +173,13 @@ function TimelineBlock({
       {/* Reorder / seek zone — center body only */}
       <div
         className={[
-          'flex h-full flex-col justify-between px-3 py-1.5',
+          'flex h-full flex-col justify-between px-3 py-2',
           sortable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer',
         ].join(' ')}
         onClick={onSeek}
         {...(sortable ? dragHandleProps : {})}
       >
-        <div className="flex items-center justify-between gap-1 text-[10px] font-mono opacity-90">
+        <div className="flex items-center justify-between gap-1 font-mono text-[10px] opacity-90">
           <span>#{seg.id}</span>
           <span>{formatTimecode(segmentDuration(seg))}</span>
         </div>
@@ -186,7 +191,7 @@ function TimelineBlock({
       {onCut ? (
         <button
           type="button"
-          className="absolute right-3 top-1 z-10 rounded bg-black/30 px-1 text-[10px] hover:bg-black/50"
+          className="absolute right-3 top-1.5 z-10 rounded-md bg-black/40 px-1.5 text-[10px] text-white/90 hover:bg-cut/80"
           onClick={(e) => {
             e.stopPropagation()
             onCut()
@@ -314,26 +319,28 @@ export function TimelineEditor({
   }
 
   return (
-    <div className="space-y-4 rounded-xl bg-panel-2 p-4 ring-1 ring-white/10">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-5 rounded-2xl bg-panel-2 p-5 shadow-lg shadow-black/30 ring-1 ring-white/10 sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="font-display text-base font-bold text-white">Timeline</h2>
-          <p className="mt-0.5 font-mono text-sm text-mist">
+          <h2 className="font-display text-lg font-bold text-ink">Timeline</h2>
+          <p className="mt-1 font-mono text-sm text-slate">
             Kept:{' '}
-            <span className={overTarget ? 'text-amber-300' : 'text-ok'}>
+            <span className={overTarget ? 'text-cut' : 'text-ok'}>
               {formatMinutes(keptSeconds)}
             </span>
             {targetSeconds != null ? (
               <>
                 {' '}
                 / Target:{' '}
-                <span className="text-white">{formatMinutes(targetSeconds)}</span>
+                <span className="text-ink">{formatMinutes(targetSeconds)}</span>
               </>
             ) : (
               <span className="text-slate"> / Target: —</span>
             )}
             <span className="ml-3 text-slate">
-              {kept.length} kept · {cut.length} cut
+              <span className="text-ok">{kept.length} kept</span>
+              {' · '}
+              <span className="text-cut">{cut.length} cut</span>
             </span>
           </p>
         </div>
@@ -341,21 +348,21 @@ export function TimelineEditor({
           type="button"
           onClick={onSaveAndExport}
           disabled={exporting || kept.length === 0}
-          className="rounded-lg bg-accent px-4 py-2 font-display text-sm font-bold text-white transition hover:bg-accent-dim disabled:opacity-50"
+          className="rounded-xl bg-accent px-5 py-2.5 font-display text-sm font-bold text-white shadow-md shadow-accent/25 transition hover:bg-accent-dim disabled:opacity-40 disabled:shadow-none"
         >
           {exporting ? 'Exporting…' : 'Save & Export'}
         </button>
       </div>
 
-      <p className="text-[11px] text-slate">
+      <p className="text-xs text-slate">
         Drag body to reorder · drag edges to trim · click to seek · ✕ to cut
       </p>
 
       <div>
-        <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-slate">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-ok/90">
           Kept (edit order)
         </p>
-        <div className="overflow-x-auto overflow-y-visible pb-2 pt-7">
+        <div className="overflow-x-auto overflow-y-visible rounded-xl bg-panel/50 px-3 pb-3 pt-8 ring-1 ring-white/5">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -367,7 +374,7 @@ export function TimelineEditor({
               items={kept.map((s) => s.id)}
               strategy={horizontalListSortingStrategy}
             >
-              <div className="flex min-h-[4.5rem] min-w-min gap-1">
+              <div className="flex min-h-[4.75rem] min-w-min gap-2">
                 {kept.length === 0 ? (
                   <p className="py-6 text-sm text-slate">
                     No kept segments — restore one from the cut list below.
@@ -408,14 +415,14 @@ export function TimelineEditor({
       </div>
 
       {cut.length > 0 ? (
-        <div className="rounded-lg bg-panel/60 ring-1 ring-white/5">
+        <div className="rounded-2xl bg-cut/5 ring-1 ring-cut/25">
           <button
             type="button"
-            className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-mist hover:text-white"
+            className="flex w-full items-center justify-between px-4 py-3 text-left text-sm text-cut transition hover:bg-cut/10"
             onClick={() => setCutOpen((o) => !o)}
             aria-expanded={cutOpen}
           >
-            <span>
+            <span className="font-medium">
               Cut <span className="text-slate">({cut.length})</span>
             </span>
             <span className="font-mono text-xs text-slate">
@@ -423,13 +430,13 @@ export function TimelineEditor({
             </span>
           </button>
           {cutOpen ? (
-            <ul className="max-h-48 space-y-1 overflow-y-auto border-t border-white/5 px-2 py-2">
+            <ul className="max-h-48 space-y-1.5 overflow-y-auto border-t border-cut/20 px-3 py-3">
               {cut.map((seg) => (
                 <li key={seg.id}>
-                  <div className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-white/5">
+                  <div className="flex items-start gap-3 rounded-xl bg-panel/40 px-3 py-2.5 ring-1 ring-white/5 hover:bg-panel/70">
                     <button
                       type="button"
-                      className="mt-0.5 shrink-0 rounded bg-ok/20 px-2 py-0.5 text-[11px] font-medium text-ok hover:bg-ok/30"
+                      className="mt-0.5 shrink-0 rounded-lg bg-ok/15 px-2.5 py-1 text-[11px] font-semibold text-ok ring-1 ring-ok/30 transition hover:bg-ok/25"
                       onClick={() => onChange(toggleKeep(segments, seg.id))}
                     >
                       Keep
@@ -444,7 +451,7 @@ export function TimelineEditor({
                         {formatTimecode(seg.trimEnd)}
                         {seg.tag ? ` · ${seg.tag}` : ''}
                       </div>
-                      <p className="truncate text-xs text-mist">
+                      <p className="truncate text-xs text-ink/80">
                         {previewText(seg.text, 12)}
                       </p>
                     </button>

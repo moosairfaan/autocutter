@@ -14,7 +14,15 @@ from faster_whisper import WhisperModel
 from autocutter import AUTOCUTTER_ENV, AUTOCUTTER_MODELS
 
 # Split when the gap between consecutive words exceeds this (seconds).
-PAUSE_THRESHOLD_S = 0.6
+# Note: faster-whisper often reports 0s gaps and folds silence into word
+# durations — see LONG_WORD_EXCESS_SILENCE_S below.
+PAUSE_THRESHOLD_S = 0.35
+
+# If a word's duration exceeds (letters / CHARS_PER_SEC) by more than this,
+# treat the surplus as trailing silence and start a new segment after it.
+# Compensates for Whisper absorbing pauses into the previous token.
+LONG_WORD_EXCESS_SILENCE_S = 0.40
+CHARS_PER_SEC = 14.0
 
 DEFAULT_WHISPER_MODEL = "medium"
 DEFAULT_WORD_TIMESTAMPS = True
@@ -57,6 +65,14 @@ def _ends_sentence(word: str) -> bool:
     return bool(_SENTENCE_END_RE.search(word.strip()))
 
 
+def _excess_silence_s(word: dict[str, Any]) -> float:
+    """How much longer a token runs than expected speech for its letters."""
+    letters = len(re.findall(r"[A-Za-z]", str(word.get("word", ""))))
+    expected = max(0.12, letters / CHARS_PER_SEC)
+    duration = float(word["end"]) - float(word["start"])
+    return duration - expected
+
+
 def _finalize_segment(seg_id: int, words: list[dict[str, Any]]) -> dict[str, Any]:
     # faster-whisper word strings usually already include a leading space.
     text = "".join(w["word"] for w in words).strip()
@@ -72,13 +88,16 @@ def segments_to_natural_boundaries(
     word_level_data: list[dict[str, Any]],
     *,
     pause_threshold_s: float = PAUSE_THRESHOLD_S,
+    long_word_excess_s: float = LONG_WORD_EXCESS_SILENCE_S,
 ) -> list[dict[str, Any]]:
     """Regroup word-level timestamps into sentence/pause-bounded segments.
 
-    Splits after a word that ends with ``.``, ``?``, or ``!``, or when the
-    gap between consecutive words is greater than *pause_threshold_s*.
-    Every returned segment therefore starts/ends on a clean break rather than
-    mid-word (Whisper's default chunking).
+    Splits after a word when any of these hold:
+    - the word ends with ``.``, ``?``, or ``!``
+    - the gap to the next word is greater than *pause_threshold_s*
+    - the word runs longer than expected for its letter count by more than
+      *long_word_excess_s* (Whisper often folds silence into the prior token,
+      so inter-word gaps are 0 even when the audio has a clear pause)
 
     *word_level_data* items should look like
     ``{"word": " Hello.", "start": 1.2, "end": 1.6}`` (``text`` is also
@@ -110,7 +129,11 @@ def segments_to_natural_boundaries(
         prev = words[i - 1]
         curr = words[i]
         gap = float(curr["start"]) - float(prev["end"])
-        split = _ends_sentence(prev["word"]) or gap > pause_threshold_s
+        split = (
+            _ends_sentence(prev["word"])
+            or gap > pause_threshold_s
+            or _excess_silence_s(prev) > long_word_excess_s
+        )
         if split:
             segments.append(_finalize_segment(len(segments), current))
             current = [curr]
@@ -209,9 +232,31 @@ def transcribe(
 
     segments = segments_to_natural_boundaries(word_level)
 
+    # TEMP DEBUG — remove after diagnosing filler/pause leakage
+    print(
+        f"[DEBUG][transcribe] raw sentence/pause segments "
+        f"({len(segments)}):",
+        flush=True,
+    )
+    for seg in segments:
+        print(
+            f"[DEBUG][transcribe] id={seg.get('id')} "
+            f"{float(seg['start']):.3f}-{float(seg['end']):.3f}s "
+            f"text={seg.get('text')!r}",
+            flush=True,
+        )
+
     transcript_path = output_dir / "transcript.json"
     with transcript_path.open("w", encoding="utf-8") as f:
         json.dump(segments, f, indent=2, ensure_ascii=False)
+
+    # Persist word timings for optional export-time filler trims (TRIM_FILLER_WORDS).
+    # Does not change segment boundaries or scoring inputs.
+    if use_word_ts and word_level:
+        words_path = output_dir / "words.json"
+        with words_path.open("w", encoding="utf-8") as f:
+            json.dump(word_level, f, indent=2, ensure_ascii=False)
+        print(f"Word timestamps saved → {words_path} ({len(word_level)} words)")
 
     print(
         f"Transcription complete: {len(word_level)} tokens → "

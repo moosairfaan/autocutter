@@ -52,8 +52,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   }
 
   return (
-    <div className="flex w-full flex-col gap-3">
-      <div className="relative overflow-hidden rounded-xl bg-black shadow-lg ring-1 ring-black/40">
+    <div className="flex w-full flex-col gap-4">
+      <div className="relative overflow-hidden rounded-2xl bg-black shadow-inner ring-1 ring-white/10">
         <video
           ref={videoRef}
           src={src}
@@ -69,7 +69,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         />
       </div>
 
-      <div className="flex flex-col gap-2 rounded-xl bg-panel px-4 py-3 text-paper">
+      <div className="flex flex-col gap-3 rounded-xl bg-panel px-4 py-3.5 text-ink ring-1 ring-white/5">
         <input
           type="range"
           min={0}
@@ -78,20 +78,20 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
           value={Math.min(current, duration || 0)}
           disabled={!duration}
           onChange={(e) => onScrub(Number(e.target.value))}
-          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-panel-2 accent-accent disabled:opacity-40"
+          className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-mist accent-accent disabled:opacity-40"
           aria-label="Scrub"
         />
         <div className="flex items-center justify-between gap-4">
           <button
             type="button"
             onClick={toggle}
-            className="rounded-lg bg-accent px-4 py-1.5 font-display text-sm font-bold tracking-wide text-white transition hover:bg-accent-dim"
+            className="rounded-xl bg-accent px-5 py-2 font-display text-sm font-bold tracking-wide text-white shadow-md shadow-accent/25 transition hover:bg-accent-dim"
           >
             {playing ? 'Pause' : 'Play'}
           </button>
-          <div className="font-mono text-sm tracking-wider text-mist">
-            <span className="text-white">{formatTimecode(current, true)}</span>
-            <span className="mx-2 text-slate">/</span>
+          <div className="font-mono text-sm tracking-wider text-slate">
+            <span className="text-ink">{formatTimecode(current, true)}</span>
+            <span className="mx-2 text-slate/60">/</span>
             <span>{formatTimecode(duration, true)}</span>
           </div>
         </div>

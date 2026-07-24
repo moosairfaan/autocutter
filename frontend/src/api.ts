@@ -235,7 +235,10 @@ export async function processProject(
 export async function exportProject(
   projectId: string,
   onProgress: (event: ProgressEvent) => void,
-  options: { clean_audio?: boolean } = {},
+  options: {
+    clean_audio?: boolean
+    resolution?: 'original' | '1080p' | '720p'
+  } = {},
   signal?: AbortSignal,
 ): Promise<ProgressEvent> {
   const res = await fetch(`${API_BASE}/projects/${projectId}/export`, {
@@ -246,6 +249,7 @@ export async function exportProject(
     },
     body: JSON.stringify({
       clean_audio: options.clean_audio ?? false,
+      resolution: options.resolution ?? 'original',
     }),
     signal, // optional; never auto-timeout
   })

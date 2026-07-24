@@ -55,6 +55,8 @@ class ProcessBody(BaseModel):
 
 class ExportBody(BaseModel):
     clean_audio: bool = False
+    # original | 1080p | 720p — unknown values fall back to original in export.py
+    resolution: str = "original"
 
 
 class EditSegment(BaseModel):
@@ -407,7 +409,12 @@ async def export_project(
     opts = body or ExportBody()
 
     def worker(emit: Any) -> None:
-        run_export(project_id, clean_audio=opts.clean_audio, emit=emit)
+        run_export(
+            project_id,
+            clean_audio=opts.clean_audio,
+            resolution=opts.resolution,
+            emit=emit,
+        )
 
     return _sse_from_worker(worker)
 

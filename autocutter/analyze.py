@@ -166,6 +166,23 @@ def _score_chunk(
         f"{json.dumps(payload, ensure_ascii=False)}"
     )
 
+    # TEMP DEBUG — remove after diagnosing filler/pause leakage
+    print(
+        f"[DEBUG][analyze] chunk {chunk_index + 1}/{total_chunks} "
+        f"segment_ids={[s['id'] for s in payload]}",
+        flush=True,
+    )
+    print(
+        f"[DEBUG][analyze] chunk {chunk_index + 1} SYSTEM PROMPT:\n"
+        f"{system_prompt}",
+        flush=True,
+    )
+    print(
+        f"[DEBUG][analyze] chunk {chunk_index + 1} USER PROMPT:\n"
+        f"{user_prompt}",
+        flush=True,
+    )
+
     def _call() -> str:
         message = client.messages.create(
             model=MODEL,
@@ -180,6 +197,11 @@ def _score_chunk(
         return "".join(parts)
 
     raw = _call()
+    # TEMP DEBUG — Anthropic returns scores/tags, not keep/cut
+    print(
+        f"[DEBUG][analyze] chunk {chunk_index + 1} RAW API RESPONSE:\n{raw}",
+        flush=True,
+    )
     try:
         items = _parse_scores_json(raw)
     except (json.JSONDecodeError, ValueError) as first_err:
@@ -187,6 +209,11 @@ def _score_chunk(
             f"  chunk {chunk_index + 1}: JSON parse failed ({first_err}); retrying once..."
         )
         raw = _call()
+        print(
+            f"[DEBUG][analyze] chunk {chunk_index + 1} RAW API RESPONSE "
+            f"(retry):\n{raw}",
+            flush=True,
+        )
         try:
             items = _parse_scores_json(raw)
         except (json.JSONDecodeError, ValueError) as second_err:
@@ -195,13 +222,36 @@ def _score_chunk(
                 f"after retry: {second_err}\nRaw response:\n{raw}"
             ) from second_err
 
+    # TEMP DEBUG — parsed JSON before normalize
+    print(
+        f"[DEBUG][analyze] chunk {chunk_index + 1} PARSED JSON "
+        f"({len(items)} items):\n"
+        f"{json.dumps(items, indent=2, ensure_ascii=False)}",
+        flush=True,
+    )
+
     normalized: list[dict[str, Any]] = []
     for item in items:
         if not isinstance(item, dict):
+            print(
+                f"[DEBUG][analyze] skipping non-dict parsed item: {item!r}",
+                flush=True,
+            )
             continue
         norm = _normalize_item(item)
         if norm is not None:
             normalized.append(norm)
+        else:
+            print(
+                f"[DEBUG][analyze] _normalize_item rejected: {item!r}",
+                flush=True,
+            )
+    print(
+        f"[DEBUG][analyze] chunk {chunk_index + 1} NORMALIZED "
+        f"({len(normalized)} items):\n"
+        f"{json.dumps(normalized, indent=2, ensure_ascii=False)}",
+        flush=True,
+    )
     return normalized
 
 
@@ -255,6 +305,11 @@ def analyze_transcript(
                 "tag": "filler",
                 "on_theme": False,
             }
+            print(
+                f"[DEBUG][analyze] segment id={seg_id} missing from API; "
+                f"defaulting score=5",
+                flush=True,
+            )
         merged.append(
             {
                 **scored,
@@ -262,6 +317,20 @@ def analyze_transcript(
                 "end": seg["end"],
                 "text": seg["text"],
             }
+        )
+
+    # TEMP DEBUG — final scored table (still scores, not keep/cut)
+    print(
+        f"[DEBUG][analyze] MERGED scored segments ({len(merged)}):",
+        flush=True,
+    )
+    for s in merged:
+        print(
+            f"[DEBUG][analyze] id={s['id']} score={s['score']} "
+            f"tag={s.get('tag')} on_theme={s.get('on_theme')} "
+            f"{float(s['start']):.3f}-{float(s['end']):.3f}s "
+            f"text={s.get('text')!r}",
+            flush=True,
         )
 
     out_path = output_dir / "scored_segments.json"

@@ -146,8 +146,40 @@ def run_process(
         selection = select_segments(
             segments, target_minutes=target_minutes, focus=focus
         )
+        # TEMP DEBUG — keep/cut are decided here (not by Anthropic)
+        print(
+            f"[DEBUG][select] target_minutes={target_minutes!r} focus={focus!r} "
+            f"kept={len(selection['kept'])} cut={len(selection['cut'])}",
+            flush=True,
+        )
+        for s in selection["kept"]:
+            print(
+                f"[DEBUG][select] KEEP id={s['id']} score={s.get('score')} "
+                f"tag={s.get('tag')} {float(s['start']):.3f}-{float(s['end']):.3f}s "
+                f"text={s.get('text')!r}",
+                flush=True,
+            )
+        for s in selection["cut"]:
+            print(
+                f"[DEBUG][select] CUT  id={s['id']} score={s.get('score')} "
+                f"tag={s.get('tag')} {float(s['start']):.3f}-{float(s['end']):.3f}s "
+                f"text={s.get('text')!r}",
+                flush=True,
+            )
         kept_ids = {int(s["id"]) for s in selection["kept"]}
         decision = build_initial_edit_decision(segments, kept_ids)
+        print(
+            f"[DEBUG][select] edit_decision.json seed "
+            f"({len(decision.get('segments', []))} segments):",
+            flush=True,
+        )
+        for s in decision.get("segments", []):
+            print(
+                f"[DEBUG][select] id={s['id']} keep={s['keep']} "
+                f"order={s.get('order')} "
+                f"trim={s.get('trim_in')}-{s.get('trim_out')}",
+                flush=True,
+            )
         edit_path = edit_decision_path(project_id)
         with edit_path.open("w", encoding="utf-8") as f:
             json.dump(decision, f, indent=2, ensure_ascii=False)

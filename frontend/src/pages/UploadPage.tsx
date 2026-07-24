@@ -60,27 +60,27 @@ export function UploadPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden">
+    <div className="relative min-h-screen overflow-hidden bg-panel text-ink">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_#ffe8d6_0%,_transparent_50%),radial-gradient(ellipse_at_bottom_right,_#d9ebe7_0%,_transparent_45%)]"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(124,92,255,0.18)_0%,_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(62,207,142,0.08)_0%,_transparent_45%)]"
       />
       <div className="relative mx-auto flex min-h-screen max-w-2xl flex-col justify-center px-6 py-16">
-        <header className="mb-10">
+        <header className="mb-10 space-y-3">
           <p className="font-display text-5xl font-extrabold tracking-tight text-ink sm:text-6xl">
             autocutter
           </p>
-          <p className="mt-3 max-w-md text-lg text-slate">
+          <p className="max-w-md text-lg leading-relaxed text-slate">
             Drop long-form footage. Set a length and theme. Get a rough cut you can
             refine.
           </p>
         </header>
 
-        <div className="space-y-6 rounded-3xl bg-white/70 p-6 shadow-sm ring-1 ring-ink/5 backdrop-blur sm:p-8">
+        <div className="space-y-6 rounded-2xl bg-panel-2 p-6 shadow-lg shadow-black/40 ring-1 ring-white/10 sm:p-8">
           <FileDrop file={file} disabled={busy} onFile={setFile} />
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block space-y-1.5">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <label className="block space-y-2">
               <span className="text-sm font-medium text-ink">Target length (minutes)</span>
               <input
                 type="number"
@@ -90,18 +90,18 @@ export function UploadPage() {
                 value={targetMinutes}
                 disabled={busy}
                 onChange={(e) => setTargetMinutes(e.target.value)}
-                className="w-full rounded-xl border border-ink/15 bg-paper px-3 py-2.5 outline-none ring-accent focus:ring-2 disabled:opacity-60"
+                className="w-full rounded-xl bg-panel px-3.5 py-3 text-ink outline-none ring-1 ring-white/10 transition placeholder:text-slate/60 focus:ring-2 focus:ring-accent disabled:opacity-50"
               />
             </label>
-            <label className="block space-y-1.5 sm:col-span-1">
+            <label className="block space-y-2 sm:col-span-1">
               <span className="text-sm font-medium text-ink">Whisper model</span>
-              <div className="rounded-xl border border-ink/10 bg-mist/50 px-3 py-2.5 text-sm text-slate">
+              <div className="rounded-xl bg-panel px-3.5 py-3 text-sm text-slate ring-1 ring-white/10">
                 from env / medium
               </div>
             </label>
           </div>
 
-          <label className="block space-y-1.5">
+          <label className="block space-y-2">
             <span className="text-sm font-medium text-ink">Focus / theme</span>
             <textarea
               rows={2}
@@ -109,20 +109,22 @@ export function UploadPage() {
               value={focus}
               disabled={busy}
               onChange={(e) => setFocus(e.target.value)}
-              className="w-full resize-none rounded-xl border border-ink/15 bg-paper px-3 py-2.5 outline-none ring-accent focus:ring-2 disabled:opacity-60"
+              className="w-full resize-none rounded-xl bg-panel px-3.5 py-3 text-ink outline-none ring-1 ring-white/10 transition placeholder:text-slate/60 focus:ring-2 focus:ring-accent disabled:opacity-50"
             />
           </label>
 
           {busy ? (
-            <ProgressBar
-              progress={phase === 'upload' ? Math.max(progress, 0.05) : progress}
-              step={step}
-              message={message}
-            />
+            <div className="rounded-xl bg-panel px-4 py-4 ring-1 ring-white/10">
+              <ProgressBar
+                progress={phase === 'upload' ? Math.max(progress, 0.05) : progress}
+                step={step}
+                message={message}
+              />
+            </div>
           ) : null}
 
           {error ? (
-            <p className="rounded-xl bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">
+            <p className="rounded-xl bg-cut/10 px-3.5 py-3 text-sm text-cut ring-1 ring-cut/30">
               {error}
             </p>
           ) : null}
@@ -131,7 +133,7 @@ export function UploadPage() {
             type="button"
             disabled={!file || busy}
             onClick={() => void onProcess()}
-            className="w-full rounded-xl bg-ink px-4 py-3.5 font-display text-lg font-bold text-paper transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-40"
+            className="w-full rounded-xl bg-accent px-4 py-3.5 font-display text-lg font-bold text-white shadow-lg shadow-accent/25 transition hover:bg-accent-dim disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none"
           >
             {busy ? (phase === 'upload' ? 'Uploading…' : 'Processing…') : 'Process'}
           </button>
